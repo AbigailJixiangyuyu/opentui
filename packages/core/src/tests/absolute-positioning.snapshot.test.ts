@@ -25,6 +25,58 @@ afterEach(() => {
 })
 
 describe("Absolute Positioning - Snapshot Tests", () => {
+  describe("Overlay regression", () => {
+    test("transparent absolute overlay preserves underlying CJK text", async () => {
+      const text = new TextRenderable(testRenderer, {
+        content: "Hello 中文 world",
+        position: "absolute",
+        left: 2,
+        top: 2,
+      })
+
+      const overlay = new BoxRenderable(testRenderer, {
+        id: "overlay",
+        position: "absolute",
+        left: 0,
+        top: 0,
+        width: 20,
+        height: 6,
+      })
+
+      testRenderer.root.add(text)
+      testRenderer.root.add(overlay)
+
+      await renderOnce()
+
+      expect(captureFrame()).toContain("Hello 中文 world")
+    })
+
+    test("zero-sized absolute overlay does not affect underlying CJK text", async () => {
+      const text = new TextRenderable(testRenderer, {
+        content: "Hello 中文 world",
+        position: "absolute",
+        left: 2,
+        top: 2,
+      })
+
+      const overlay = new BoxRenderable(testRenderer, {
+        id: "overlay-zero",
+        position: "absolute",
+        left: 0,
+        top: 0,
+        width: 0,
+        height: 0,
+      })
+
+      testRenderer.root.add(text)
+      testRenderer.root.add(overlay)
+
+      await renderOnce()
+
+      expect(captureFrame()).toContain("Hello 中文 world")
+    })
+  })
+  
   describe("Basic absolute positioning", () => {
     test("absolute positioned box at top-left", async () => {
       const box = new BoxRenderable(testRenderer, {
