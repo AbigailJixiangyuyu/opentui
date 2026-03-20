@@ -323,8 +323,15 @@ export async function createCliRenderer(config: CliRendererConfig = {}): Promise
 }
 
 export enum CliRenderEvents {
+  RESIZE = "resize",
+  FOCUS = "focus",
+  BLUR = "blur",
+  THEME_MODE = "theme_mode",
+  CAPABILITIES = "capabilities",
+  SELECTION = "selection",
   DEBUG_OVERLAY_TOGGLE = "debugOverlay:toggle",
   DESTROY = "destroy",
+  MEMORY_SNAPSHOT = "memory:snapshot",
 }
 
 export enum RendererControlState {
@@ -722,6 +729,22 @@ export class CliRenderer extends EventEmitter implements RenderContext {
     return this._currentFocusedRenderable
   }
 
+  private normalizeClockTime(now: number, fallback: number): number {
+    if (Number.isFinite(now)) {
+      return now
+    }
+
+    return Number.isFinite(fallback) ? fallback : 0
+  }
+
+  private getElapsedMs(now: number, then: number): number {
+    if (!Number.isFinite(now) || !Number.isFinite(then)) {
+      return 0
+    }
+
+    return Math.max(now - then, 0)
+  }
+
   public focusRenderable(renderable: Renderable) {
     if (this._currentFocusedRenderable === renderable) return
 
@@ -793,8 +816,8 @@ export class CliRenderer extends EventEmitter implements RenderContext {
 
     if (!this.updateScheduled && !this.renderTimeout) {
       this.updateScheduled = true
-      const now = this.clock.now()
-      const elapsed = now - this.lastTime
+      const now = this.normalizeClockTime(this.clock.now(), this.lastTime)
+      const elapsed = this.getElapsedMs(now, this.lastTime)
       const delay = Math.max(this.minTargetFrameTime - elapsed, 0)
 
       if (delay === 0) {
@@ -977,7 +1000,7 @@ export class CliRenderer extends EventEmitter implements RenderContext {
 
     this._console.resize(this.width, this.height)
     this.root.resize(this.width, this.height)
-    this.emit("resize", this.width, this.height)
+    this.emit(CliRenderEvents.RESIZE, this.width, this.height)
     this.requestRender()
   }
 
@@ -1141,7 +1164,7 @@ export class CliRenderer extends EventEmitter implements RenderContext {
     if (isCapabilityResponse(sequence)) {
       this.lib.processCapabilityResponse(this.rendererPtr, sequence)
       this._capabilities = this.lib.getTerminalCapabilities(this.rendererPtr)
-      this.emit("capabilities", this._capabilities)
+      this.emit(CliRenderEvents.CAPABILITIES, this._capabilities)
       return true
     }
     return false
@@ -1157,12 +1180,12 @@ export class CliRenderer extends EventEmitter implements RenderContext {
         this.lib.restoreTerminalModes(this.rendererPtr)
         this.shouldRestoreModesOnNextFocus = false
       }
-      this.emit("focus")
+      this.emit(CliRenderEvents.FOCUS)
       return true
     }
     if (sequence === "\x1b[O") {
       this.shouldRestoreModesOnNextFocus = true
-      this.emit("blur")
+      this.emit(CliRenderEvents.BLUR)
       return true
     }
     return false
@@ -1172,14 +1195,14 @@ export class CliRenderer extends EventEmitter implements RenderContext {
     if (sequence === "\x1b[?997;1n") {
       if (this._themeMode !== "dark") {
         this._themeMode = "dark"
-        this.emit("theme_mode", "dark")
+        this.emit(CliRenderEvents.THEME_MODE, "dark")
       }
       return true
     }
     if (sequence === "\x1b[?997;2n") {
       if (this._themeMode !== "light") {
         this._themeMode = "light"
-        this.emit("theme_mode", "light")
+        this.emit(CliRenderEvents.THEME_MODE, "light")
       }
       return true
     }
@@ -1543,7 +1566,7 @@ export class CliRenderer extends EventEmitter implements RenderContext {
       this.lastMemorySnapshot.arrayBuffers,
     )
 
-    this.emit("memory:snapshot", this.lastMemorySnapshot)
+    this.emit(CliRenderEvents.MEMORY_SNAPSHOT, this.lastMemorySnapshot)
   }
 
   private startMemorySnapshotTimer(): void {
@@ -1630,7 +1653,7 @@ export class CliRenderer extends EventEmitter implements RenderContext {
     this.currentRenderBuffer = this.lib.getCurrentBuffer(this.rendererPtr)
     this._console.resize(this.width, this.height)
     this.root.resize(this.width, this.height)
-    this.emit("resize", this.width, this.height)
+    this.emit(CliRenderEvents.RESIZE, this.width, this.height)
     this.requestRender()
   }
 
@@ -2008,7 +2031,7 @@ export class CliRenderer extends EventEmitter implements RenderContext {
   private startRenderLoop(): void {
     if (!this._isRunning) return
 
-    this.lastTime = this.clock.now()
+    this.lastTime = this.normalizeClockTime(this.clock.now(), 0)
     this.frameCount = 0
     this.lastFpsTime = this.lastTime
     this.currentFps = 0
@@ -2026,14 +2049,14 @@ export class CliRenderer extends EventEmitter implements RenderContext {
       this.renderTimeout = null
     }
     try {
-      const now = this.clock.now()
-      const elapsed = now - this.lastTime
+      const now = this.normalizeClockTime(this.clock.now(), this.lastTime)
+      const elapsed = this.getElapsedMs(now, this.lastTime)
 
       const deltaTime = elapsed
       this.lastTime = now
 
       this.frameCount++
-      if (now - this.lastFpsTime >= 1000) {
+      if (this.getElapsedMs(now, this.lastFpsTime) >= 1000) {
         this.currentFps = this.frameCount
         this.frameCount = 0
         this.lastFpsTime = now
@@ -2284,7 +2307,7 @@ export class CliRenderer extends EventEmitter implements RenderContext {
   private finishSelection(): void {
     if (this.currentSelection) {
       this.currentSelection.isDragging = false
-      this.emit("selection", this.currentSelection)
+      this.emit(CliRenderEvents.SELECTION, this.currentSelection)
       this.notifySelectablesOfSelectionChange()
     }
   }
