@@ -2,6 +2,7 @@
 
 import {
   CliRenderer,
+  CliRenderEvents,
   TextRenderable,
   FrameBufferRenderable,
   BoxRenderable,
@@ -66,11 +67,20 @@ interface DemoState {
 }
 
 let demoState: DemoState | null = null
+let rendererDestroyHandler: (() => void) | null = null
 
 const spawnInterval = 800
 const orthoViewHeight = 20.0
 
 export async function run(renderer: CliRenderer): Promise<void> {
+  rendererDestroyHandler = () => {
+    if (!demoState) return
+
+    clearInterval(demoState.statsInterval)
+    demoState.isInitialized = false
+  }
+  renderer.on(CliRenderEvents.DESTROY, rendererDestroyHandler)
+
   renderer.start()
   const initialTermWidth = renderer.terminalWidth
   const initialTermHeight = renderer.terminalHeight
@@ -458,7 +468,7 @@ export async function run(renderer: CliRenderer): Promise<void> {
   }
 
   state.statsInterval = setInterval(() => {
-    if (state.isInitialized) {
+    if (state.isInitialized && !state.statsText.isDestroyed) {
       const explosionCount = state.activeExplosionHandles.filter((h) => !h.hasBeenRestored).length
       state.statsText.content = `Crates: ${state.physicsWorld.boxes.length} | Explosions: ${explosionCount} | Press [B] for burst spawn`
     }
@@ -475,6 +485,11 @@ export async function run(renderer: CliRenderer): Promise<void> {
 
 export function destroy(renderer: CliRenderer): void {
   if (!demoState) return
+
+  if (rendererDestroyHandler) {
+    renderer.off(CliRenderEvents.DESTROY, rendererDestroyHandler)
+    rendererDestroyHandler = null
+  }
 
   renderer.removeFrameCallback(demoState.frameCallback)
   renderer.keyInput.off("keypress", demoState.keyHandler)
